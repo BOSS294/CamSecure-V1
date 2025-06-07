@@ -164,7 +164,7 @@ class Detector:
                 self.log(f"Motion detected at ({x*2},{y*2},{(x+w)*2},{(y+h)*2}) [{motion_type}]")
 
         elif mode == 1:
-            # Room Scan Mode: Animated scan lines and fake analysis
+            # Room Scan Mode ( DUMMY HAVE TO BE CREATED ): Animated scan lines and fake analysis
             scan_color = (0, 255, 128)
             for i in range(0, frame.shape[0], 40):
                 cv2.line(frame, (0, i), (frame.shape[1], i), scan_color, 2)
