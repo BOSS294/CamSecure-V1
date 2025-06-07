@@ -20,6 +20,7 @@ import requests
 import scipy.spatial
 import math
 import random
+import concurrent.futures
 
 # -------- Configuration --------
 VIDEO_OUTPUT_DIR = "recordings"
@@ -89,7 +90,8 @@ class Detector:
             except Exception:
                 self.registered_face_enc = None
         self.frame_counter = 0
-        self.deepface_interval = 5  # Run DeepFace every 5 frames
+        self.deepface_interval = 10  # Run DeepFace every 5 frames
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
     def log(self, message):
         timestamp = get_ist_time()
@@ -266,26 +268,9 @@ class Detector:
                 for (x, y, w, h) in faces:
                     x_full, y_full, w_full, h_full = int(x/0.4), int(y/0.4), int(w/0.4), int(h/0.4)
                     face_crop = frame[y_full:y_full+h_full, x_full:x_full+w_full]
-                    temp_path = "temp_emotion.jpg"
-                    cv2.imwrite(temp_path, face_crop)
+                    # Instead of running DeepFace directly, submit to executor
                     if self.frame_counter % self.deepface_interval == 0:
-                        try:
-                            result = DeepFace.analyze(img_path=temp_path, actions=['emotion'], enforce_detection=False)
-                            emotion = result['dominant_emotion']
-                            cv2.rectangle(frame, (x_full, y_full), (x_full+w_full, y_full+h_full), (0,255,255), 2)
-                            cv2.putText(frame, f"Emotion: {emotion}", (x_full, y_full-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
-                            if emotion in ['fear', 'surprise', 'angry']:
-                                threat_detected = True
-                                ss_path = os.path.join(PARANORMAL_DIR, f"emotion_{emotion}_{get_ist_time().replace(':','-')}.jpg")
-                                cv2.imwrite(ss_path, frame)
-                            # Zoom in on face
-                            if not zoomed:
-                                zoomed_face = cv2.resize(face_crop, (frame.shape[1], frame.shape[0]))
-                                cv2.putText(zoomed_face, f"ZOOMED FACE - {emotion}", (30, 60), cv2.FONT_HERSHEY_DUPLEX, 1.2, (0,255,255), 3)
-                                frame = zoomed_face
-                                zoomed = True
-                        except Exception:
-                            pass
+                        self.executor.submit(self.run_deepface, face_crop, x_full, y_full, w_full, h_full, frame)
                     os.remove(temp_path)
             except Exception as e:
                 self.log(f"Face detection error: {e}")
@@ -374,6 +359,18 @@ class Detector:
             self.motion_callback(f"motion_detection_{self.motion_count}st_sighting", frame)
 
         return frame
+
+    def run_deepface(self, face_crop, x, y, w, h, frame):
+        temp_path = "temp_emotion.jpg"
+        cv2.imwrite(temp_path, face_crop)
+        try:
+            result = DeepFace.analyze(img_path=temp_path, actions=['emotion'], enforce_detection=False)
+            emotion = result['dominant_emotion']
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,255), 2)
+            cv2.putText(frame, f"Emotion: {emotion}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+        except Exception:
+            pass
+        os.remove(temp_path)
 
     def register_my_face(self):
         # Capture a frame and save as your face in known_faces
